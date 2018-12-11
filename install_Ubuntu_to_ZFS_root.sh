@@ -23,7 +23,7 @@ sgdisk     -n1:0:0      -t1:BF01 /dev/disk/by-id/$DRIVE_ID
 # 2.3a Unencrypted
 zpool create -o ashift=12 \
       -O atime=off -O canmount=off -O compression=lz4 -O normalization=formD \
-      -O xattr=sa -O mountpoint=/ -R /mnt \
+      -O xattr=sa -O mountpoint=/ -R /mnt -f \
       rpool /dev/disk/by-id/${DRIVE_ID}-part1
 
 # 3.1 Create a filesystem dataset to act as a container
@@ -35,6 +35,7 @@ zfs mount rpool/ROOT/ubuntu
 
 # 3.3 Create datasets
 zfs create                 -o setuid=off              rpool/home
+zfs create -o canmount=off -o setuid=off  -o exec=off rpool/var
 zfs create -o com.sun:auto-snapshot=false             rpool/var/cache
 zfs create -o acltype=posixacl -o xattr=sa            rpool/var/log
 zfs create                                            rpool/var/spool
@@ -70,12 +71,12 @@ zfs set devices=off rpool
 
 # 4.1 Configure the hostname (change HOSTNAME to the desired hostname).
 echo $NEW_HOSTNAME > /mnt/etc/hostname
-vi /mnt/etc/hosts
 echo "127.0.1.1       $NEW_HOSTNAME" >> /mnt/etc/hosts
 # Add a line:
 # 127.0.1.1       HOSTNAME
 # or if the system has a real name in DNS:
 # 127.0.1.1       FQDN HOSTNAME
+vi /mnt/etc/hosts
 
 # 4.2 Configure the network interface:
 # Find the interface name:
