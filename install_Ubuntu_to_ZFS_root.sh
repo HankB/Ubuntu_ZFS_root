@@ -1,10 +1,16 @@
 #!/bin/bash
+
+# 1.4 Become root:
+# sudo -i
+if [[ $EUID -ne 0 ]]; then
+   echo "This script must be run as root" 
+   echo "execute \"sudo -i\" and try again"
+   exit 1
+fi
+
 set -e
 set -u
 set -x
-
-# 1.4 Become root:
-sudo -i
 
 # 1.5 Install ZFS in the Live CD environment
 apt install --yes debootstrap gdisk zfs-initramfs
@@ -18,6 +24,7 @@ sgdisk     -n3:1M:+512M -t3:EF00 /dev/disk/by-id/$DRIVE_ID
 
 # 2.2a Unencrypted
 sgdisk     -n1:0:0      -t1:BF01 /dev/disk/by-id/$DRIVE_ID
+partprobe  /dev/disk/by-id/$DRIVE_ID
 
 # 2.3 Create the root pool
 # 2.3a Unencrypted
@@ -115,14 +122,21 @@ cat /mnt/etc/apt/sources.list
 mount --rbind /dev  /mnt/dev
 mount --rbind /proc /mnt/proc
 mount --rbind /sys  /mnt/sys
-chroot /mnt /bin/bash --login
+
+#chroot /mnt /bin/bash --login
 
 # following commands have to be copied/pasted to execute inside the chroot
+cat <<END_OF_CHROOT >/mnt/usr/local/sbin/chroot_commands.sh
+#!/bin/bash
+set -e
+set -u
+set -x
 
 # 4.5 Configure a basic system environment
 ln -s /proc/self/mounts /etc/mtab
 apt update
 dpkg-reconfigure locales
+dpkg-reconfigure tzdata
 
 # 4.6 Install ZFS in the chroot environment for the new system
 apt install --yes --no-install-recommends linux-image-generic
@@ -161,7 +175,11 @@ rpool/tmp /tmp zfs noatime,nodev,nosuid 0 0
 EOF
 
 # 5.1 Verify that the ZFS root filesystem is recognized
-grub-probe /
+if ! [ \`grub-probe /\` == "zfs" ]
+then
+    echo "grub-probe != zfs"
+    exit 1
+fi
 
 # 5.2 Refresh the initrd files
 update-initramfs -u -k all
@@ -188,11 +206,14 @@ zfs snapshot rpool/ROOT/ubuntu@install
 
 # 6.2 Exit from the chroot environment back to the LiveCD environment
 exit
-
+END_OF_CHROOT
+chmod +x /mnt/usr/local/sbin/chroot_commands.sh
+#chroot /mnt /usr/local/sbin/chroot_commands.sh
+exit
 # 6.3 Run these commands in the LiveCD environment to unmount all filesystems
 mount | grep -v zfs | tac | awk '/\/mnt/ {print $3}' | xargs -i{} umount -lf {}
 zpool export rpool
 
 # 6.4 Reboot
-reboot
+# reboot
 
