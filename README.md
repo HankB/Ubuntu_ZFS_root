@@ -5,7 +5,7 @@ Script to facilitate installing Ubuntu on a ZFS root.
 ## Inspiration
 
 [Ubuntu 18.04 Root on ZFS
-](https://github.com/zfsonlinux/zfs/wiki/Ubuntu-18.04-Root-on-ZFS)
+](https://github.com/zfsonlinux/zfs/wiki/Ubuntu-18.04-Root-on-ZFS) as of 2018-11-16.
 
 ## Motivation
 
