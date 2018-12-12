@@ -15,23 +15,34 @@ set -x
 # 1.5 Install ZFS in the Live CD environment
 apt install --yes debootstrap gdisk zfs-initramfs
 
-# 2.1 If you are re-using a disk, clear it as necessary
-sgdisk --zap-all /dev/disk/by-id/$DRIVE_ID
+if [ $USE_EXISTING_PART == "no" ];then
+    # 2.1 If you are re-using a disk, clear it as necessary
+    sgdisk --zap-all /dev/disk/by-id/$DRIVE_ID
 
-# 2.2 Partition your disk
-# Run this for UEFI booting (for use now or in the future):
-sgdisk     -n3:1M:+512M -t3:EF00 /dev/disk/by-id/$DRIVE_ID
+    # 2.2 Partition your disk
+    # Run this for UEFI booting (for use now or in the future):
+    sgdisk     -n3:1M:+512M -t3:EF00 /dev/disk/by-id/$DRIVE_ID
+    export EFI_PART=/dev/disk/by-id/${DRIVE_ID}-part3
 
-# 2.2a Unencrypted
-sgdisk     -n1:0:0      -t1:BF01 /dev/disk/by-id/$DRIVE_ID
-partprobe  /dev/disk/by-id/$DRIVE_ID
+    # 2.2a Unencrypted
+    sgdisk     -n1:0:0      -t1:BF01 /dev/disk/by-id/$DRIVE_ID
+    export ROOT_PART=/dev/disk/by-id/${DRIVE_ID}-part1
+    partprobe  /dev/disk/by-id/$DRIVE_ID
+elif [ $USE_EXISTING_PART == "yes" ];then
+    echo "using $ROOT_PART for root"
+    echo "using $EFI_PART for EFI"
+else
+    echo set USE_EXISTING_PART to \"yes\" or \"no\"
+    #exit 1
+fi
+
 
 # 2.3 Create the root pool
 # 2.3a Unencrypted
 zpool create -o ashift=12 \
       -O atime=off -O canmount=off -O compression=lz4 -O normalization=formD \
       -O xattr=sa -O mountpoint=/ -R /mnt -f \
-      rpool /dev/disk/by-id/${DRIVE_ID}-part1
+      rpool $ROOT_PART
 
 # 3.1 Create a filesystem dataset to act as a container
 zfs create -o canmount=off -o mountpoint=none rpool/ROOT
@@ -144,11 +155,13 @@ apt install --yes zfs-initramfs
 
 # 4.8 Install GRUB
 # 4.8b Install GRUB for UEFI booting
-apt install dosfstools
-mkdosfs -F 32 -n EFI /dev/disk/by-id/${DRIVE_ID}-part3
+if [ $USE_EXISTING_PART == "no" ];then
+    apt install dosfstools
+    mkdosfs -F 32 -n EFI ${EFI_PART}
+fi
 mkdir /boot/efi
 echo PARTUUID=$(blkid -s PARTUUID -o value \
-      /dev/disk/by-id/${DRIVE_ID}-part3) \
+      ${EFI_PART}) \
       /boot/efi vfat noatime,nofail,x-systemd.device-timeout=1 0 1 >> /etc/fstab
 mount /boot/efi
 apt install --yes grub-efi-amd64
@@ -175,8 +188,7 @@ rpool/tmp /tmp zfs noatime,nodev,nosuid 0 0
 EOF
 
 # 5.1 Verify that the ZFS root filesystem is recognized
-if ! [ \`grub-probe /\` == "zfs" ]
-then
+if ! [ \`grub-probe /\` == "zfs" ];then
     echo "grub-probe != zfs"
     exit 1
 fi
@@ -208,8 +220,8 @@ zfs snapshot rpool/ROOT/ubuntu@install
 exit
 END_OF_CHROOT
 chmod +x /mnt/usr/local/sbin/chroot_commands.sh
-#chroot /mnt /usr/local/sbin/chroot_commands.sh
-exit
+chroot /mnt /usr/local/sbin/chroot_commands.sh
+
 # 6.3 Run these commands in the LiveCD environment to unmount all filesystems
 mount | grep -v zfs | tac | awk '/\/mnt/ {print $3}' | xargs -i{} umount -lf {}
 zpool export rpool
